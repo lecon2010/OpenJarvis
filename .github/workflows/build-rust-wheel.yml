@@ -94,3 +94,58 @@ jobs:
           tests/security/test_guardrails.py
           tests/security/test_rate_limiter.py
           -q -m "not live and not cloud"
+
+  full:
+    # Full suite on a clean Windows runner with the Rust extension installed.
+    # The pytest log is uploaded even when the suite fails so the failures can
+    # be classified without re-running everything locally.
+    needs: build
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v10.3.3
+        with:
+          enable-cache: true
+
+      - name: Install project dependencies
+        run: uv sync --extra dev --extra server
+
+      - name: Download the built wheel
+        uses: actions/download-artifact@v4
+        with:
+          name: openjarvis-rust-py3.12-win_amd64
+          path: wheel
+
+      - name: Install the wheel
+        shell: pwsh
+        run: |
+          $wheel = Get-ChildItem wheel -Filter *.whl | Select-Object -First 1
+          uv pip install --python .venv\Scripts\python.exe $wheel.FullName
+
+      - name: Verify the extension imports
+        run: .venv\Scripts\python.exe -c "import openjarvis_rust; from openjarvis._rust_bridge import RUST_AVAILABLE; print('openjarvis_rust OK', RUST_AVAILABLE); assert RUST_AVAILABLE"
+
+      - name: Run the full test suite
+        shell: pwsh
+        run: |
+          .venv\Scripts\python.exe -m pytest -q -m "not live and not cloud" 2>&1 |
+            Tee-Object -FilePath pytest-full.log
+          $code = $LASTEXITCODE
+          Write-Host "pytest exit code: $code"
+          exit 0
+        continue-on-error: true
+
+      - name: Upload pytest log
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: pytest-full-windows
+          path: pytest-full.log
+          if-no-files-found: error
