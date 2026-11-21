@@ -3,7 +3,8 @@ name: build-rust-wheel
 # Manual workflow: build the mandatory PyO3 extension on a GitHub-hosted
 # Windows runner and expose the wheel as an artifact. Used to get a working
 # `openjarvis_rust` into a venv on machines where the local toolchain is
-# blocked (e.g. Windows Smart App Control).
+# blocked (e.g. Windows Smart App Control), and to run the Rust-dependent test
+# suites on a machine where the extension can actually load.
 on:
   push:
     branches: [build-rust-wheel]
@@ -44,3 +45,52 @@ jobs:
           name: openjarvis-rust-py${{ matrix.python-version }}-win_amd64
           path: rust/crates/openjarvis-python/dist/*.whl
           if-no-files-found: error
+
+  verify:
+    # Validate the exact artifact from the build job on a runner where Smart
+    # App Control does not exist: import the extension and run the suites that
+    # are blocked on the local Windows machine.
+    needs: build
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v10.3.3
+        with:
+          enable-cache: true
+
+      - name: Install project dependencies
+        run: uv sync --extra dev --extra server
+
+      - name: Download the built wheel
+        uses: actions/download-artifact@v4
+        with:
+          name: openjarvis-rust-py3.12-win_amd64
+          path: wheel
+
+      - name: Install the wheel
+        shell: pwsh
+        run: |
+          $wheel = Get-ChildItem wheel -Filter *.whl | Select-Object -First 1
+          Write-Host "Installing $($wheel.FullName)"
+          uv pip install --python .venv\Scripts\python.exe $wheel.FullName
+
+      - name: Verify the extension imports
+        run: .venv\Scripts\python.exe -c "import openjarvis_rust; from openjarvis._rust_bridge import RUST_AVAILABLE; print('openjarvis_rust OK', RUST_AVAILABLE); assert RUST_AVAILABLE"
+
+      - name: Run Rust-dependent test suites
+        run: >
+          .venv\Scripts\python.exe -m pytest
+          tests/core/test_rust_bridge.py
+          tests/memory
+          tests/security/test_capabilities.py
+          tests/security/test_scanner.py
+          tests/security/test_guardrails.py
+          tests/security/test_rate_limiter.py
+          -q -m "not live and not cloud"
