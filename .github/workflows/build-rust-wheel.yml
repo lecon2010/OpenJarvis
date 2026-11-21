@@ -1,0 +1,38 @@
+name: build-rust-wheel
+
+# Manual workflow: build the mandatory PyO3 extension on a GitHub-hosted
+# Windows runner and expose the wheel as an artifact. Used to get a working
+# `openjarvis_rust` into a venv on machines where the local toolchain is
+# blocked (e.g. Windows Smart App Control).
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Build the wheel
+        working-directory: rust/crates/openjarvis-python
+        run: |
+          python -m pip install --upgrade maturin
+          maturin build --release --out dist
+
+      - name: Upload wheel
+        uses: actions/upload-artifact@v4
+        with:
+          name: openjarvis-rust-cp312-win_amd64
+          path: rust/crates/openjarvis-python/dist/*.whl
+          if-no-files-found: error
