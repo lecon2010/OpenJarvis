@@ -122,6 +122,11 @@ jobs:
           uv pip install --python .venv\Scripts\python.exe
           pillow pytesseract onnxruntime openwakeword sounddevice
 
+      - name: Download openWakeWord models
+        run: >
+          .venv\Scripts\python.exe -c
+          "from openwakeword.utils import download_models; download_models()" 
+
       - name: Download the built wheel
         uses: actions/download-artifact@v4
         with:
