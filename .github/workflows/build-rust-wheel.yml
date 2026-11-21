@@ -15,13 +15,19 @@ permissions:
 jobs:
   build:
     runs-on: windows-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        # Match the CI-supported Python range so the wheel can be installed
+        # on another machine without rebuilding.
+        python-version: ["3.12", "3.13"]
     steps:
       - uses: actions/checkout@v4
 
       - name: Set up Python
         uses: actions/setup-python@v5
         with:
-          python-version: "3.12"
+          python-version: ${{ matrix.python-version }}
 
       - name: Install Rust toolchain
         uses: dtolnay/rust-toolchain@stable
@@ -35,6 +41,6 @@ jobs:
       - name: Upload wheel
         uses: actions/upload-artifact@v4
         with:
-          name: openjarvis-rust-cp312-win_amd64
+          name: openjarvis-rust-py${{ matrix.python-version }}-win_amd64
           path: rust/crates/openjarvis-python/dist/*.whl
           if-no-files-found: error
